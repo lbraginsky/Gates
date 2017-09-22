@@ -5,6 +5,11 @@ Created on Sep 18, 2017
 '''
 
 def bit(v, k): return (v>>k)&1
+def from_bits(bits): return sum(b<<i for i, b in enumerate(bits))
+def to_bits(n, v): return [bit(v, i) for i in range(2**n)]
+def fmt(n, v): return ''.join(map(str, to_bits(n, v)))
+def VAR(n, k): return from_bits(([0]*2**k + [1]*2**k) * 2**(n-k-1))
+def VARS(n): return { VAR(n, k): chr(ord('A')+k) for k in range(n) }
 
 gates = {
          0b0000: "False",
@@ -27,7 +32,7 @@ gates = {
 
 gates_by_name = { name: value for value, name in gates.iteritems() }
 
-def min_circuits(x, inputs=["A", "B"]):
+def min_circuits(n, x, inputs=None):
     """
     Make minimal circuits for all gates
     x is the list of available gates (by name)
@@ -35,13 +40,15 @@ def min_circuits(x, inputs=["A", "B"]):
     of gates in the circuit and tree is a node: input (string) or tuple
     (gate, node, node)
     """
+    inputs = inputs or [VAR(n, k) for k in range(n)]
+
     def G(g, a, b): return bit(g, a+a+b)
     def combine(g, x, y):
         return reduce(lambda u, v: u|v, (G(g, bit(x, i), bit(y, i)) << i
-                                         for i in range(4)))
+                                         for i in range(1<<n)))
 
     x_gates = [gates_by_name[i] for i in x]
-    results = { g: (0, g) for g in (gates_by_name[i] for i in inputs) }
+    results = { i: (0, i) for i in inputs }
 
     def count_gates(u, v):
         c = set()
@@ -49,20 +56,23 @@ def min_circuits(x, inputs=["A", "B"]):
             w = results[n][1]
             if type(w) is tuple:
                 c.add(w)
-                g, a, b = w
+                _g, a, b = w
                 add(a)
                 add(b)
         add(u)
         add(v)
         return len(c) + 1
     
+    count = 0
     while True:
         change = False
         avail = list(results)
         uv = [(u, v) for u in avail for v in avail]
+        count += 1
         for g in x_gates:
             for u, v in uv:
                 w = combine(g, u, v)
+                if w==u or w==v: continue
                 nw = count_gates(u, v)
                 if not w in results or nw < results[w][0]:
                     results[w] = (nw, (g, u, v))
@@ -70,32 +80,41 @@ def min_circuits(x, inputs=["A", "B"]):
         if not change: break
     return results
 
-def circuit_str(results, i):
+def circuit_str(vv, results, i):
     def cs(i):
         _size, c = results[i]
-        if not (type(c) is tuple): return gates[c]
+        if not (type(c) is tuple): return vv[c]
         g, a, b = c
         return "({} {} {})".format(gates[g], cs(a), cs(b))
     return cs(i)
 
 if __name__ == '__main__':
     
-    def min_circuits_test(x, inputs=["A", "B"]):
-        print "\nAll gates from {} {}".format(x, inputs)
-        results = min_circuits(x, inputs=inputs)
+    def min_circuits_test(n, x):
+        print "\nAll gates from {} {} inputs".format(x, n)
+        print "Inputs"
+        vv = VARS(n)
+        for v in sorted(vv):
+            print "{:10} {}".format(fmt(n, v), vv[v])
+        print "Outputs"
+        results = min_circuits(n, x)
+        for g in range(1<<(1<<n)):
+            size, cs = (results[g][0], circuit_str(vv, results, g)) if g in results else ('-', '-')
+            print "{:10} [{}] {}".format(fmt(n, g), size, cs)
 
-        for g, g_name in sorted(gates.iteritems()):
-            size, cs = (results[g][0], circuit_str(results, g)) if g in results else ('-', '-')
-            print "{:10} [{}] {}".format(g_name, size, cs)
+    n = 3
+#     min_circuits_test(n, ["AAndNotB"])
+    min_circuits_test(n, ["Nand"])
+#     min_circuits_test(n, ["And", "Or", "NotA"])
+#     min_circuits_test(n, ["And", "NotA"])
 
-    min_circuits_test(["Nand"])
-    min_circuits_test(["Nand"], inputs=["A", "B", "True", "False"])
-    min_circuits_test(["Nor"])
-    min_circuits_test(["And", "Or", "NotA"])
-    min_circuits_test(["And", "Or"])
-    min_circuits_test(["And", "Or"], inputs=["A", "B", "True", "False"])
-    min_circuits_test(["And", "NotA"])
-    min_circuits_test(["Or", "NotA"])
-    min_circuits_test(["NotAAndB"])
-    min_circuits_test(["NotAAndB", "NotA"])
-    min_circuits_test(["NotAAndB", "NotAOrB"])
+    import cProfile
+    import pstats
+    
+    def profile(cmd):
+        profileName = 'profile'
+        cProfile.run(cmd, profileName)
+        p = pstats.Stats(profileName)
+        p.strip_dirs().sort_stats('time').print_stats()
+    
+#     profile('min_circuits_test(n, ["Nand"])')
